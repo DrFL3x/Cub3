@@ -3,25 +3,33 @@
 #include <stdlib.h>
 #include <Windows.h>
 #include <math.h>
+#include <cmath>
 
-int WINDOW_HEIGHT = 500;
-int WINDOW_WIDTH  = 500;
+int WINDOW_HEIGHT = 700;
+int WINDOW_WIDTH  = 700;
 
-typedef struct {
-	int x;
-	int y;
-} xyStart;
+struct Matrix4x4
+{
+	float matrix[4][4] = { 0 };
 
-typedef struct {
-	int x;
-	int y;
-}Point2D;
+	void InitalizeMatrix(const float (&values)[4][4])
+	{
+		for (int i = 0;i < 4; i++)
+		{
+			for (int j = 0; j < 4; j++)
+			{
+				matrix[i][j] = values[i][j];
+			}
+		}
+	}
+};
 
 typedef struct {
 	float x;
 	float y;
 	float z;
-}Point3D;
+	float h;
+}vertex;
 
 const wchar_t windowClassName[] = L"CubeWindow";
 uint32_t* pixel_buffer;
@@ -66,14 +74,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-void swap_points2d(Point2D* point1, Point2D*  point2)
+void swap_points2d(vertex* point1, vertex*  point2)
 {
-	Point2D temp = *point1;
+	vertex temp = *point1;
 	*point1 = *point2;
 	*point2 = temp;
 }
 
-void DrawPrimitiveRectangle(xyStart sCoord, int w, int h, uint32_t color)
+void DrawRectangle(vertex sCoord, int w, int h, uint32_t color)
 {
 	for (int py = sCoord.y; py < sCoord.y + h; py++)
 	{
@@ -85,7 +93,7 @@ void DrawPrimitiveRectangle(xyStart sCoord, int w, int h, uint32_t color)
 	}
 }
 
-void DrawCircle(xyStart sCoord, int radius, uint32_t color)
+void DrawCircle(vertex sCoord, int radius, uint32_t color)
 {
 	int x_distance = 0;
 	int y_distance = 0;
@@ -94,8 +102,8 @@ void DrawCircle(xyStart sCoord, int radius, uint32_t color)
 	{
 		for (int px = 0; px < WINDOW_WIDTH; px++)
 		{
-			x_distance = abs(sCoord.x - px);
-			y_distance = abs(sCoord.y - py);
+			x_distance = std::abs(sCoord.x - px);
+			y_distance = std::abs(sCoord.y - py);
 			point_distance = (double)sqrt(x_distance*x_distance + y_distance*y_distance);
 			if (point_distance <= radius)
 			{
@@ -106,11 +114,12 @@ void DrawCircle(xyStart sCoord, int radius, uint32_t color)
 	}
 }
 
-void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color)
+void DrawTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
 {
-	Point2D vertice_bottom;
-	Point2D vertice_middle;
-	Point2D vertice_top;
+
+	vertex vertice_bottom;
+	vertex vertice_middle;
+	vertex vertice_top;
 	
 	// sort vertices by y
 	vertice_bottom = point1;
@@ -146,15 +155,30 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 	float slope_top_middle    = (float)delta_X_top_middle / delta_Y_top_middle;
 	float slope_middle_bottom = (float)delta_X_middle_bottom / delta_Y_middle_bottom;
 
+	//
+	// calculate shade slope -> dh/dy
+	//
+	float delta_H_top_bottom = vertice_top.h - vertice_bottom.h;
+	float delta_H_top_middle = vertice_top.h - vertice_middle.h;
+	float delta_H_middle_bottom = vertice_middle.h - vertice_bottom.h;
+
+	float h_slope_top_bottom = (float)delta_H_top_bottom / delta_Y_top_bottom;
+	float h_slope_top_middle = (float)delta_H_top_middle / delta_Y_top_middle;
+	float h_slope_middle_bottom = (float)delta_H_middle_bottom / delta_Y_middle_bottom;
+
 	// Interpolate top-mid 
 	int x0 = vertice_top.x;
 	int y0 = vertice_top.y;
+	float h0 = vertice_top.h;
 	for (int y = vertice_top.y; y < vertice_middle.y; y++)
 	{
 		// x = x0 + (y - y0) * dx / dy;
 		float x_left  = x0 + ( y - y0 ) * slope_top_middle;
 		float x_right = x0 + ( y - y0 ) * slope_top_bottom;
-		
+
+		float h_left  = h0 + (y - y0) * h_slope_top_middle;
+		float h_right = h0 + (y - y0) * h_slope_top_bottom;
+
 		int x_start= x_left;
 		int x_end= x_right;
 		if (x_start > x_end)
@@ -164,21 +188,51 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 			x_end = temp;
 		}
 
+		float dh_dx = 0.0f;
+		float dx = (x_right - x_left);
+		
+		if (dx != 0.0f)
+		{
+			dh_dx= (h_right - h_left)/dx;
+		}
+
+		float current_h = h_left;
+		
 		for (float x = x_start; x < x_end; x++)
 		{
+			// extract color channels
+			//   00000001 10101001 10011010 10101010  (32 - bit color number)
+			// & 00000000 00000000 00000000 11111111  (0xFF mask)
+			uint32_t r = (color >> 16) & 0xFF;
+			uint32_t g = (color >> 8) & 0xFF;
+			uint32_t b = color & 0xFF;
+
+			float intensity = current_h;
+			if (intensity < 0.0f) intensity = 0.0f;
+			if (intensity > 1.0f) intensity = 1.0f;
+
+			uint32_t shaded_r = (uint32_t)(r * intensity);
+			uint32_t shaded_g = (uint32_t)(g * intensity);
+			uint32_t shaded_b = (uint32_t)(b * intensity);
+
 			int i =(int)y * WINDOW_WIDTH + x;
-			pixel_buffer[i] = color;
-		}
-				
+			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+			pixel_buffer[i] = final_color;
+			current_h+= dh_dx;
+		}		
 	}
 	// Interpolate mid-bottom
 	int x0_m = vertice_middle.x;
 	int y0_m = vertice_middle.y;
+	float h0_m = vertice_middle.h;
 	for (int y = y0_m; y < vertice_bottom.y; y++)
 	{
 		// x = x0 + (y - y0) * dx / dy;
 		float x_left = x0_m + (y - y0_m) * slope_middle_bottom;
 		float x_right = x0 + (y - y0) * slope_top_bottom;
+
+		float h_left = h0_m + (y - y0_m) * h_slope_middle_bottom;
+		float h_right = h0 + (y - y0) * h_slope_top_bottom;
 
 		int x_start = x_left;
 		int x_end = x_right;
@@ -189,19 +243,41 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 			x_end = temp;
 		}
 
+		float dh_dx = 0.0f;
+		float dx = (x_right - x_left);
+
+		if (dx != 0.0f)
+		{
+			dh_dx = (h_right-h_left) / dx;
+		}
+
+		float current_h = h_left;
 		for (float x = x_start; x < x_end; x++)
 		{
+			uint32_t r = (color >> 16) & 0xFF;
+			uint32_t g = (color >> 8) & 0xFF;
+			uint32_t b = color & 0xFF;
+
+			float intensity = current_h;
+			if (intensity < 0.0f) intensity = 0.0f;
+			if (intensity > 1.0f) intensity = 1.0f;
+
+			uint32_t shaded_r = (uint32_t)(r * intensity);
+			uint32_t shaded_g = (uint32_t)(g * intensity);
+			uint32_t shaded_b = (uint32_t)(b * intensity);
+
 			int i = (int)y * WINDOW_WIDTH + x;
-			pixel_buffer[i] = color;
+			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+			pixel_buffer[i] = final_color;
+			current_h += dh_dx;
 		}
 	}
-
 }
 
-void draw_line(Point2D point1, Point2D point2, uint32_t color)
+void DrawLine(vertex point1, vertex point2, uint32_t color)
 {
-	Point2D point_top = point1;
-	Point2D point_bottom = point2;
+	vertex point_top = point1;
+	vertex point_bottom = point2;
 
 	if (point1.y > point2.y)
 	{
@@ -252,6 +328,86 @@ void draw_line(Point2D point1, Point2D point2, uint32_t color)
 	}
 }
 
+void DrawLineTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
+{
+	DrawLine(point1, point2, color);
+	DrawLine(point2, point3, color);
+	DrawLine(point3, point1, color);
+}
+
+// Take vertice & multiply by matrix
+void VectorMatrixMul(const vertex &inputV, vertex &outputV,float (&matrix) [4][4])
+{
+	// matrix [row][col]
+	outputV.x = inputV.x * matrix[0][0] + inputV.y * matrix[1][0] + inputV.z * matrix[2][0]+ matrix[3][0];
+	outputV.y = inputV.x * matrix[0][1] + inputV.y * matrix[1][1] + inputV.z * matrix[2][1]+ matrix[3][1];
+	outputV.z = inputV.x * matrix[0][2] + inputV.y * matrix[1][2] + inputV.z * matrix[2][2]+ matrix[3][2];
+	float dev = inputV.x * matrix[0][3] + inputV.y * matrix[1][3] + inputV.z * matrix[2][3]+ matrix[3][3];
+
+	// devide with z coord to match distance squezzing of object
+	if (dev != 0)
+	{
+		outputV.x /= dev;
+		outputV.y /= dev;
+		outputV.z /= dev;
+	}
+}
+
+void OnUserUpdate()
+{
+	uint32_t color = 0x00FF0000; // Red
+
+	vertex ver1 = { 160, 100,50, 1.0 };
+	vertex ver2 = { 110, 150,60, 0.5};
+	vertex ver3 = { 180, 200,70, 0.0 };
+
+	vertex projVer1 = {};
+	vertex projVer2 = {};
+	vertex projVer3 = {};
+
+	DrawLineTriangle(ver1, ver2, ver3, color);
+	//DrawTriangle(ver1, ver2, ver3, color);
+	Matrix4x4 m;
+
+	int WINDOW_HEIGHT = 700;
+	int WINDOW_WIDTH = 700;
+
+	float zNear = 0.1f;
+	float zFar = 1000.0f;
+	float q1 = zFar / (zFar - zNear);
+	float q2 = (zFar * zNear) / (zFar - zNear);
+
+	float fovDegrees = 90.0f;
+	float aspectRatio = (float)WINDOW_WIDTH/ (float)WINDOW_HEIGHT;
+	float fFovRad = 1.0f / tanf( fovDegrees*(3.14159f / 180.0f) * 0.5f );
+	
+	float values[4][4] =
+	{
+		{ aspectRatio * fFovRad, 0 , 0, 0},
+		{0, fFovRad, 0, 0},
+		{0, 0, q1, 1},
+		{0,0,-q2,0},
+	};
+
+	m.InitalizeMatrix(values);
+	VectorMatrixMul(ver1, projVer1, m.matrix);
+	VectorMatrixMul(ver2, projVer2, m.matrix);
+	VectorMatrixMul(ver3, projVer3, m.matrix);
+
+	projVer1.x += 1.0f; projVer1.y += 1.0f;
+	projVer2.x += 1.0f; projVer2.y += 1.0f;
+	projVer3.x += 1.0f; projVer3.y += 1.0f;
+	//
+	projVer1.x *= 0.1 * (float)WINDOW_WIDTH;
+	projVer1.y *= 0.1 * (float)WINDOW_HEIGHT;
+	projVer2.x *= 0.1 * (float)WINDOW_WIDTH;
+	projVer2.y *= 0.1 * (float)WINDOW_HEIGHT;
+	projVer3.x *= 0.1 * (float)WINDOW_WIDTH;
+	projVer3.y *= 0.1 * (float)WINDOW_HEIGHT;
+
+
+	DrawLineTriangle(projVer1, projVer2, projVer3, color);
+}
 
 
 int main()
@@ -260,25 +416,20 @@ int main()
 	
 	int rect_w = 50;
 	int rect_h = 50;
-	xyStart sCoord = { 100 ,100 };
-	xyStart sCoordCircle = { 200 ,200 };
 
 	// Window buffer
 	pixel_buffer = (uint32_t*)malloc(WINDOW_HEIGHT * WINDOW_WIDTH * sizeof(uint32_t));
-	uint32_t color = 0x00FF0000; // Red
 
-	Point2D xy1 = {100,100};
-	Point2D xy2 = {50,150};
-	Point2D xy3 = {120,200};
-	Point2D xy1_l = {160,100};
-	Point2D xy2_l = {110,150};
-	Point2D xy3_l = {180,200};
+	vertex xy1 = {100,100,1.0};
+	vertex xy2 = {220,150,0.5};
+	vertex xy3 = {170,200,0.0};
+	vertex xy1_l = {160,100};
+	vertex xy2_l = {110,150};
+	vertex xy3_l = {180,200};
 
-	DrawTriangle(xy1, xy2, xy3, color);
-	
-	draw_line(xy1_l,xy2_l, color);
-	draw_line(xy2_l,xy3_l, color);
-	draw_line(xy3_l,xy1_l, color);
+	//DrawTriangle(xy1, xy2, xy3, color);
+
+	OnUserUpdate();
 
 	// Bitmap
 	bmpi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -315,10 +466,11 @@ int main()
 	HWND hwnd;
 	hwnd = CreateWindowEx(WS_EX_CLIENTEDGE,
 		windowClassName,
-		L"CCube",
+		L"Cube++",
 		WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, WINDOW_WIDTH, WINDOW_HEIGHT,
 		NULL, NULL, GetModuleHandle(NULL), NULL);
+
 	if (hwnd == NULL)
 	{
 		MessageBox(NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
