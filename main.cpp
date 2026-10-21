@@ -3,25 +3,48 @@
 #include <stdlib.h>
 #include <Windows.h>
 #include <math.h>
+#include <chrono>
+#include <cmath>
+#include <vector>
+#include <thread>
 
-int WINDOW_HEIGHT = 500;
-int WINDOW_WIDTH  = 500;
+int WINDOW_HEIGHT = 700;
+int WINDOW_WIDTH  = 700;
 
-typedef struct {
-	int x;
-	int y;
-} xyStart;
+float rotTheta= 0.0f;
 
-typedef struct {
-	int x;
-	int y;
-}Point2D;
+struct Matrix4x4
+{
+	float matrix[4][4] = { 0 };
+
+	void InitalizeMatrix(const float (&values)[4][4])
+	{
+		for (int i = 0;i < 4; i++)
+		{
+			for (int j = 0; j < 4; j++)
+			{
+				matrix[i][j] = values[i][j];
+			}
+		}
+	}
+};
 
 typedef struct {
 	float x;
 	float y;
 	float z;
-}Point3D;
+	float h;
+}vertex;
+
+typedef struct
+{
+	vertex v[3];
+}triangle;
+
+typedef struct
+{
+	std:: vector<triangle> triangles;
+} model;
 
 const wchar_t windowClassName[] = L"CubeWindow";
 uint32_t* pixel_buffer;
@@ -66,14 +89,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-void swap_points2d(Point2D* point1, Point2D*  point2)
+void swap_points2d(vertex* point1, vertex*  point2)
 {
-	Point2D temp = *point1;
+	vertex temp = *point1;
 	*point1 = *point2;
 	*point2 = temp;
 }
 
-void DrawPrimitiveRectangle(xyStart sCoord, int w, int h, uint32_t color)
+void DrawRectangle(vertex sCoord, int w, int h, uint32_t color)
 {
 	for (int py = sCoord.y; py < sCoord.y + h; py++)
 	{
@@ -85,7 +108,7 @@ void DrawPrimitiveRectangle(xyStart sCoord, int w, int h, uint32_t color)
 	}
 }
 
-void DrawCircle(xyStart sCoord, int radius, uint32_t color)
+void DrawCircle(vertex sCoord, int radius, uint32_t color)
 {
 	int x_distance = 0;
 	int y_distance = 0;
@@ -94,8 +117,8 @@ void DrawCircle(xyStart sCoord, int radius, uint32_t color)
 	{
 		for (int px = 0; px < WINDOW_WIDTH; px++)
 		{
-			x_distance = abs(sCoord.x - px);
-			y_distance = abs(sCoord.y - py);
+			x_distance = std::abs(sCoord.x - px);
+			y_distance = std::abs(sCoord.y - py);
 			point_distance = (double)sqrt(x_distance*x_distance + y_distance*y_distance);
 			if (point_distance <= radius)
 			{
@@ -106,11 +129,12 @@ void DrawCircle(xyStart sCoord, int radius, uint32_t color)
 	}
 }
 
-void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color)
+void DrawTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
 {
-	Point2D vertice_bottom;
-	Point2D vertice_middle;
-	Point2D vertice_top;
+
+	vertex vertice_bottom;
+	vertex vertice_middle;
+	vertex vertice_top;
 	
 	// sort vertices by y
 	vertice_bottom = point1;
@@ -146,15 +170,30 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 	float slope_top_middle    = (float)delta_X_top_middle / delta_Y_top_middle;
 	float slope_middle_bottom = (float)delta_X_middle_bottom / delta_Y_middle_bottom;
 
+	//
+	// calculate shade slope -> dh/dy
+	//
+	float delta_H_top_bottom = vertice_top.h - vertice_bottom.h;
+	float delta_H_top_middle = vertice_top.h - vertice_middle.h;
+	float delta_H_middle_bottom = vertice_middle.h - vertice_bottom.h;
+
+	float h_slope_top_bottom = (float)delta_H_top_bottom / delta_Y_top_bottom;
+	float h_slope_top_middle = (float)delta_H_top_middle / delta_Y_top_middle;
+	float h_slope_middle_bottom = (float)delta_H_middle_bottom / delta_Y_middle_bottom;
+
 	// Interpolate top-mid 
 	int x0 = vertice_top.x;
 	int y0 = vertice_top.y;
+	float h0 = vertice_top.h;
 	for (int y = vertice_top.y; y < vertice_middle.y; y++)
 	{
 		// x = x0 + (y - y0) * dx / dy;
 		float x_left  = x0 + ( y - y0 ) * slope_top_middle;
 		float x_right = x0 + ( y - y0 ) * slope_top_bottom;
-		
+
+		float h_left  = h0 + (y - y0) * h_slope_top_middle;
+		float h_right = h0 + (y - y0) * h_slope_top_bottom;
+
 		int x_start= x_left;
 		int x_end= x_right;
 		if (x_start > x_end)
@@ -164,21 +203,51 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 			x_end = temp;
 		}
 
+		float dh_dx = 0.0f;
+		float dx = (x_right - x_left);
+		
+		if (dx != 0.0f)
+		{
+			dh_dx= (h_right - h_left)/dx;
+		}
+
+		float current_h = h_left;
+		
 		for (float x = x_start; x < x_end; x++)
 		{
+			// extract color channels
+			//   00000001 10101001 10011010 10101010  (32 - bit color number)
+			// & 00000000 00000000 00000000 11111111  (0xFF mask)
+			uint32_t r = (color >> 16) & 0xFF;
+			uint32_t g = (color >> 8) & 0xFF;
+			uint32_t b = color & 0xFF;
+
+			float intensity = current_h;
+			if (intensity < 0.0f) intensity = 0.0f;
+			if (intensity > 1.0f) intensity = 1.0f;
+
+			uint32_t shaded_r = (uint32_t)(r * intensity);
+			uint32_t shaded_g = (uint32_t)(g * intensity);
+			uint32_t shaded_b = (uint32_t)(b * intensity);
+
 			int i =(int)y * WINDOW_WIDTH + x;
-			pixel_buffer[i] = color;
-		}
-				
+			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+			pixel_buffer[i] = final_color;
+			current_h+= dh_dx;
+		}		
 	}
 	// Interpolate mid-bottom
 	int x0_m = vertice_middle.x;
 	int y0_m = vertice_middle.y;
+	float h0_m = vertice_middle.h;
 	for (int y = y0_m; y < vertice_bottom.y; y++)
 	{
 		// x = x0 + (y - y0) * dx / dy;
 		float x_left = x0_m + (y - y0_m) * slope_middle_bottom;
 		float x_right = x0 + (y - y0) * slope_top_bottom;
+
+		float h_left = h0_m + (y - y0_m) * h_slope_middle_bottom;
+		float h_right = h0 + (y - y0) * h_slope_top_bottom;
 
 		int x_start = x_left;
 		int x_end = x_right;
@@ -189,19 +258,41 @@ void DrawTriangle(Point2D point1, Point2D point2, Point2D point3, uint32_t color
 			x_end = temp;
 		}
 
+		float dh_dx = 0.0f;
+		float dx = (x_right - x_left);
+
+		if (dx != 0.0f)
+		{
+			dh_dx = (h_right-h_left) / dx;
+		}
+
+		float current_h = h_left;
 		for (float x = x_start; x < x_end; x++)
 		{
+			uint32_t r = (color >> 16) & 0xFF;
+			uint32_t g = (color >> 8) & 0xFF;
+			uint32_t b = color & 0xFF;
+
+			float intensity = current_h;
+			if (intensity < 0.0f) intensity = 0.0f;
+			if (intensity > 1.0f) intensity = 1.0f;
+
+			uint32_t shaded_r = (uint32_t)(r * intensity);
+			uint32_t shaded_g = (uint32_t)(g * intensity);
+			uint32_t shaded_b = (uint32_t)(b * intensity);
+
 			int i = (int)y * WINDOW_WIDTH + x;
-			pixel_buffer[i] = color;
+			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+			pixel_buffer[i] = final_color;
+			current_h += dh_dx;
 		}
 	}
-
 }
 
-void draw_line(Point2D point1, Point2D point2, uint32_t color)
+void DrawLine(vertex point1, vertex point2, uint32_t color)
 {
-	Point2D point_top = point1;
-	Point2D point_bottom = point2;
+	vertex point_top = point1;
+	vertex point_bottom = point2;
 
 	if (point1.y > point2.y)
 	{
@@ -252,33 +343,243 @@ void draw_line(Point2D point1, Point2D point2, uint32_t color)
 	}
 }
 
+void DrawLineTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
+{
+	DrawLine(point1, point2, color);
+	DrawLine(point2, point3, color);
+	DrawLine(point3, point1, color);
+}
+
+// Take vertice & multiply by matrix
+void VectorMatrixMul(const vertex &inputV, vertex &outputV,float (&matrix) [4][4])
+{
+	// matrix [row][col]
+	outputV.x = inputV.x * matrix[0][0] + inputV.y * matrix[1][0] + inputV.z * matrix[2][0]+ matrix[3][0];
+	outputV.y = inputV.x * matrix[0][1] + inputV.y * matrix[1][1] + inputV.z * matrix[2][1]+ matrix[3][1];
+	outputV.z = inputV.x * matrix[0][2] + inputV.y * matrix[1][2] + inputV.z * matrix[2][2]+ matrix[3][2];
+	float dev = inputV.x * matrix[0][3] + inputV.y * matrix[1][3] + inputV.z * matrix[2][3]+ matrix[3][3];
+
+	// devide with z coord to match distance squezzing of object
+	if (dev != 0)
+	{
+		outputV.x /= dev;
+		outputV.y /= dev;
+		outputV.z /= dev;
+	}
+}
+
+void OnUserUpdate( float elapsedTime)
+{
+	std::fill(
+		pixel_buffer,
+		pixel_buffer + WINDOW_WIDTH * WINDOW_HEIGHT,
+		//0x00000000
+		0x00C0C0C0
+	);
+
+	uint32_t color = 0x00FF0000; // Red
+
+	// make a cube and project it ?
+	// cube -> triangles -> vertices
+	model cube =
+	{{ // vector <triangle>
+		// SOUTH
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 0.0f, 0.0f, 1.0f}
+		}},
+		// EAST
+		{{
+			{1.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{1.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// WEST
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{0.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// NORTH
+		{{
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// TOP
+		{{
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f}
+		}},
+		// BOTTOM
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 0.0f, 1.0f}
+		}}
+		 
+	}};
+
+	vertex ver1 = { 160, 100,50, 1.0 };
+	vertex ver2 = { 110, 150,60, 0.5 };
+	vertex ver3 = { 180, 200,70, 0.0 };
+
+	triangle projTriangle = {};
+
+	Matrix4x4 m;
+	Matrix4x4 matRotX;
+	Matrix4x4 matRotZ;
+
+	rotTheta += 0.3f * elapsedTime;
+
+	// Rotation Z
+	matRotZ.matrix[0][0] = cosf(rotTheta);
+	matRotZ.matrix[0][1] = sinf(rotTheta);
+	matRotZ.matrix[1][0] = -sinf(rotTheta);
+	matRotZ.matrix[1][1] = cosf(rotTheta);
+	matRotZ.matrix[2][2] = 1;
+	matRotZ.matrix[3][3] = 1;
+
+	// Rotation X
+	matRotX.matrix[0][0] = 1;
+	matRotX.matrix[1][1] = cosf(rotTheta * 0.5f);
+	matRotX.matrix[1][2] = sinf(rotTheta * 0.5f);
+	matRotX.matrix[2][1] = -sinf(rotTheta * 0.5f);
+	matRotX.matrix[2][2] = cosf(rotTheta * 0.5f);
+	matRotX.matrix[3][3] = 1;
+
+	float zNear = 0.1f;
+	float zFar = 1000.0f;
+	float q1 = zFar / (zFar - zNear);
+	float q2 = (zFar * zNear) / (zFar - zNear);
+
+	float fovDegrees = 90.0f;
+	float aspectRatio = (float)WINDOW_WIDTH/ (float)WINDOW_HEIGHT;
+	float fFovRad = 1.0f / tanf( fovDegrees*(3.14159f / 180.0f) * 0.5f );
+	
+	float projectionValues[4][4] =
+	{
+		{ aspectRatio * fFovRad, 0 , 0, 0},
+		{0, fFovRad, 0, 0},
+		{0, 0, q1, 1},
+		{0,0,-q2,0},
+	};
+
+
+	m.InitalizeMatrix(projectionValues);
+
+	uint32_t colors[12] =
+	{
+		0x00FF0000, // 1. Red
+		0x0000FF00, // 2. Green
+		0x000000FF, // 3. Blue
+		0x00FFFF00, // 4. Yellow
+		0x00800080, // 5. Purple
+		0x0000FFFF, // 6. Cyan
+		0x00FF8000, // 7. Orange
+		0x00FFFFFF, // 8. White
+		0x00FF1493, // 9. Deep pink
+		0x00808080, // 10. Gray
+		0x0080FF00, // 11. Lime
+		0x00000000  // 12. Black
+	};
+
+	int colorIndex = 0;
+	for (auto t : cube.triangles)
+	{
+
+		triangle tOffset, tRotatedZ, tRotatedZX;
+		
+		//rotate Z
+		VectorMatrixMul(t.v[0], tRotatedZ.v[0], matRotZ.matrix);
+		VectorMatrixMul(t.v[1], tRotatedZ.v[1], matRotZ.matrix);
+		VectorMatrixMul(t.v[2], tRotatedZ.v[2], matRotZ.matrix);
+		// rotate X
+		VectorMatrixMul(tRotatedZ.v[0], tRotatedZX.v[0], matRotX.matrix);
+		VectorMatrixMul(tRotatedZ.v[1], tRotatedZX.v[1], matRotX.matrix);
+		VectorMatrixMul(tRotatedZ.v[2], tRotatedZX.v[2], matRotX.matrix);
+
+		
+		tOffset = tRotatedZX;
+		tOffset.v[0].z = t.v[0].z + 3.0f;
+		tOffset.v[1].z = t.v[1].z + 3.0f;
+		tOffset.v[2].z = t.v[2].z + 3.0f;
+
+		VectorMatrixMul(tOffset.v[0], projTriangle.v[0], m.matrix);
+		VectorMatrixMul(tOffset.v[1], projTriangle.v[1], m.matrix);
+		VectorMatrixMul(tOffset.v[2], projTriangle.v[2], m.matrix);
+		
+		// scale properly
+		float scaleZ = 0.4f;
+		projTriangle.v[0].x+= 1.0f;
+		projTriangle.v[0].y+= 1.0f;
+		projTriangle.v[1].x+= 1.0f;
+		projTriangle.v[1].y+= 1.0f;
+		projTriangle.v[2].x+= 1.0f;
+		projTriangle.v[2].y+= 1.0f;
+
+		projTriangle.v[0].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[0].y*= scaleZ * (float)WINDOW_HEIGHT;
+		
+		projTriangle.v[1].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[1].y*= scaleZ * (float)WINDOW_HEIGHT;
+		
+		projTriangle.v[2].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[2].y*= scaleZ * (float)WINDOW_HEIGHT;
+
+		
+		DrawLineTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], 0x000000FF);
+		colorIndex++;
+	}
+
+}
 
 
 int main()
 {
-	printf("Hello there");
+	//printf("Hello there");
 	
-	int rect_w = 50;
-	int rect_h = 50;
-	xyStart sCoord = { 100 ,100 };
-	xyStart sCoordCircle = { 200 ,200 };
+	std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
+	auto previousTime = startTime;
+
 
 	// Window buffer
 	pixel_buffer = (uint32_t*)malloc(WINDOW_HEIGHT * WINDOW_WIDTH * sizeof(uint32_t));
-	uint32_t color = 0x00FF0000; // Red
 
-	Point2D xy1 = {100,100};
-	Point2D xy2 = {50,150};
-	Point2D xy3 = {120,200};
-	Point2D xy1_l = {160,100};
-	Point2D xy2_l = {110,150};
-	Point2D xy3_l = {180,200};
+	//OnUserUpdate(elapsedTime);
 
-	DrawTriangle(xy1, xy2, xy3, color);
-	
-	draw_line(xy1_l,xy2_l, color);
-	draw_line(xy2_l,xy3_l, color);
-	draw_line(xy3_l,xy1_l, color);
 
 	// Bitmap
 	bmpi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -315,10 +616,11 @@ int main()
 	HWND hwnd;
 	hwnd = CreateWindowEx(WS_EX_CLIENTEDGE,
 		windowClassName,
-		L"CCube",
+		L"Cube++",
 		WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, WINDOW_WIDTH, WINDOW_HEIGHT,
 		NULL, NULL, GetModuleHandle(NULL), NULL);
+
 	if (hwnd == NULL)
 	{
 		MessageBox(NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
@@ -327,11 +629,46 @@ int main()
 	ShowWindow(hwnd, SW_SHOWNORMAL);
 	UpdateWindow(hwnd);
 
-	while (GetMessage(&Msg, NULL, 0, 0) > 0)
+	//while (GetMessage(&Msg, NULL, 0, 0) > 0)
+	//{
+	//	TranslateMessage(&Msg);
+	//	DispatchMessage(&Msg);
+	//}
+
+	while (true)
 	{
-		TranslateMessage(&Msg);
-		DispatchMessage(&Msg);
+		// Process pending Windows messages
+		MSG Msg;
+
+		while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
+		{
+			if (Msg.message == WM_QUIT)
+				return 0;
+
+			TranslateMessage(&Msg);
+			DispatchMessage(&Msg);
+		}
+
+		// Measure frame time
+		std::chrono::steady_clock::time_point currentTime = std::chrono::steady_clock::now();
+
+		float elapsedTime =
+			std::chrono::duration<float>(
+				currentTime - previousTime
+			).count();
+
+		previousTime = currentTime;
+
+		// Update your application
+		OnUserUpdate(elapsedTime);
+
+		InvalidateRect(hwnd, NULL, FALSE);
+		UpdateWindow(hwnd);
+
+		// Optional: limit CPU usage / target ~60 updates per second
+		//std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
+
 
 	return 0;
 }
