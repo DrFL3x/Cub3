@@ -3,10 +3,15 @@
 #include <stdlib.h>
 #include <Windows.h>
 #include <math.h>
+#include <chrono>
 #include <cmath>
+#include <vector>
+#include <thread>
 
 int WINDOW_HEIGHT = 700;
 int WINDOW_WIDTH  = 700;
+
+float rotTheta= 0.0f;
 
 struct Matrix4x4
 {
@@ -30,6 +35,16 @@ typedef struct {
 	float z;
 	float h;
 }vertex;
+
+typedef struct
+{
+	vertex v[3];
+}triangle;
+
+typedef struct
+{
+	std:: vector<triangle> triangles;
+} model;
 
 const wchar_t windowClassName[] = L"CubeWindow";
 uint32_t* pixel_buffer;
@@ -353,24 +368,117 @@ void VectorMatrixMul(const vertex &inputV, vertex &outputV,float (&matrix) [4][4
 	}
 }
 
-void OnUserUpdate()
+void OnUserUpdate( float elapsedTime)
 {
+	std::fill(
+		pixel_buffer,
+		pixel_buffer + WINDOW_WIDTH * WINDOW_HEIGHT,
+		//0x00000000
+		0x00C0C0C0
+	);
+
 	uint32_t color = 0x00FF0000; // Red
 
+	// make a cube and project it ?
+	// cube -> triangles -> vertices
+	model cube =
+	{{ // vector <triangle>
+		// SOUTH
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 0.0f, 0.0f, 1.0f}
+		}},
+		// EAST
+		{{
+			{1.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{1.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// WEST
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{0.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// NORTH
+		{{
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		// TOP
+		{{
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 1.0f, 0.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 0.0f, 1.0f}
+		}},
+		// BOTTOM
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
+		}},
+		{{
+			{0.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 0.0f, 0.0f, 1.0f}
+		}}
+		 
+	}};
+
 	vertex ver1 = { 160, 100,50, 1.0 };
-	vertex ver2 = { 110, 150,60, 0.5};
+	vertex ver2 = { 110, 150,60, 0.5 };
 	vertex ver3 = { 180, 200,70, 0.0 };
 
-	vertex projVer1 = {};
-	vertex projVer2 = {};
-	vertex projVer3 = {};
+	triangle projTriangle = {};
 
-	DrawLineTriangle(ver1, ver2, ver3, color);
-	//DrawTriangle(ver1, ver2, ver3, color);
 	Matrix4x4 m;
+	Matrix4x4 matRotX;
+	Matrix4x4 matRotZ;
 
-	int WINDOW_HEIGHT = 700;
-	int WINDOW_WIDTH = 700;
+	rotTheta += 0.3f * elapsedTime;
+
+	// Rotation Z
+	matRotZ.matrix[0][0] = cosf(rotTheta);
+	matRotZ.matrix[0][1] = sinf(rotTheta);
+	matRotZ.matrix[1][0] = -sinf(rotTheta);
+	matRotZ.matrix[1][1] = cosf(rotTheta);
+	matRotZ.matrix[2][2] = 1;
+	matRotZ.matrix[3][3] = 1;
+
+	// Rotation X
+	matRotX.matrix[0][0] = 1;
+	matRotX.matrix[1][1] = cosf(rotTheta * 0.5f);
+	matRotX.matrix[1][2] = sinf(rotTheta * 0.5f);
+	matRotX.matrix[2][1] = -sinf(rotTheta * 0.5f);
+	matRotX.matrix[2][2] = cosf(rotTheta * 0.5f);
+	matRotX.matrix[3][3] = 1;
 
 	float zNear = 0.1f;
 	float zFar = 1000.0f;
@@ -381,7 +489,7 @@ void OnUserUpdate()
 	float aspectRatio = (float)WINDOW_WIDTH/ (float)WINDOW_HEIGHT;
 	float fFovRad = 1.0f / tanf( fovDegrees*(3.14159f / 180.0f) * 0.5f );
 	
-	float values[4][4] =
+	float projectionValues[4][4] =
 	{
 		{ aspectRatio * fFovRad, 0 , 0, 0},
 		{0, fFovRad, 0, 0},
@@ -389,47 +497,89 @@ void OnUserUpdate()
 		{0,0,-q2,0},
 	};
 
-	m.InitalizeMatrix(values);
-	VectorMatrixMul(ver1, projVer1, m.matrix);
-	VectorMatrixMul(ver2, projVer2, m.matrix);
-	VectorMatrixMul(ver3, projVer3, m.matrix);
 
-	projVer1.x += 1.0f; projVer1.y += 1.0f;
-	projVer2.x += 1.0f; projVer2.y += 1.0f;
-	projVer3.x += 1.0f; projVer3.y += 1.0f;
-	//
-	projVer1.x *= 0.1 * (float)WINDOW_WIDTH;
-	projVer1.y *= 0.1 * (float)WINDOW_HEIGHT;
-	projVer2.x *= 0.1 * (float)WINDOW_WIDTH;
-	projVer2.y *= 0.1 * (float)WINDOW_HEIGHT;
-	projVer3.x *= 0.1 * (float)WINDOW_WIDTH;
-	projVer3.y *= 0.1 * (float)WINDOW_HEIGHT;
+	m.InitalizeMatrix(projectionValues);
 
+	uint32_t colors[12] =
+	{
+		0x00FF0000, // 1. Red
+		0x0000FF00, // 2. Green
+		0x000000FF, // 3. Blue
+		0x00FFFF00, // 4. Yellow
+		0x00800080, // 5. Purple
+		0x0000FFFF, // 6. Cyan
+		0x00FF8000, // 7. Orange
+		0x00FFFFFF, // 8. White
+		0x00FF1493, // 9. Deep pink
+		0x00808080, // 10. Gray
+		0x0080FF00, // 11. Lime
+		0x00000000  // 12. Black
+	};
 
-	DrawLineTriangle(projVer1, projVer2, projVer3, color);
+	int colorIndex = 0;
+	for (auto t : cube.triangles)
+	{
+
+		triangle tOffset, tRotatedZ, tRotatedZX;
+		
+		//rotate Z
+		VectorMatrixMul(t.v[0], tRotatedZ.v[0], matRotZ.matrix);
+		VectorMatrixMul(t.v[1], tRotatedZ.v[1], matRotZ.matrix);
+		VectorMatrixMul(t.v[2], tRotatedZ.v[2], matRotZ.matrix);
+		// rotate X
+		VectorMatrixMul(tRotatedZ.v[0], tRotatedZX.v[0], matRotX.matrix);
+		VectorMatrixMul(tRotatedZ.v[1], tRotatedZX.v[1], matRotX.matrix);
+		VectorMatrixMul(tRotatedZ.v[2], tRotatedZX.v[2], matRotX.matrix);
+
+		
+		tOffset = tRotatedZX;
+		tOffset.v[0].z = t.v[0].z + 3.0f;
+		tOffset.v[1].z = t.v[1].z + 3.0f;
+		tOffset.v[2].z = t.v[2].z + 3.0f;
+
+		VectorMatrixMul(tOffset.v[0], projTriangle.v[0], m.matrix);
+		VectorMatrixMul(tOffset.v[1], projTriangle.v[1], m.matrix);
+		VectorMatrixMul(tOffset.v[2], projTriangle.v[2], m.matrix);
+		
+		// scale properly
+		float scaleZ = 0.4f;
+		projTriangle.v[0].x+= 1.0f;
+		projTriangle.v[0].y+= 1.0f;
+		projTriangle.v[1].x+= 1.0f;
+		projTriangle.v[1].y+= 1.0f;
+		projTriangle.v[2].x+= 1.0f;
+		projTriangle.v[2].y+= 1.0f;
+
+		projTriangle.v[0].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[0].y*= scaleZ * (float)WINDOW_HEIGHT;
+		
+		projTriangle.v[1].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[1].y*= scaleZ * (float)WINDOW_HEIGHT;
+		
+		projTriangle.v[2].x*= scaleZ * (float)WINDOW_WIDTH;
+		projTriangle.v[2].y*= scaleZ * (float)WINDOW_HEIGHT;
+
+		
+		DrawLineTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], 0x000000FF);
+		colorIndex++;
+	}
+
 }
 
 
 int main()
 {
-	printf("Hello there");
+	//printf("Hello there");
 	
-	int rect_w = 50;
-	int rect_h = 50;
+	std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
+	auto previousTime = startTime;
+
 
 	// Window buffer
 	pixel_buffer = (uint32_t*)malloc(WINDOW_HEIGHT * WINDOW_WIDTH * sizeof(uint32_t));
 
-	vertex xy1 = {100,100,1.0};
-	vertex xy2 = {220,150,0.5};
-	vertex xy3 = {170,200,0.0};
-	vertex xy1_l = {160,100};
-	vertex xy2_l = {110,150};
-	vertex xy3_l = {180,200};
+	//OnUserUpdate(elapsedTime);
 
-	//DrawTriangle(xy1, xy2, xy3, color);
-
-	OnUserUpdate();
 
 	// Bitmap
 	bmpi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -479,11 +629,46 @@ int main()
 	ShowWindow(hwnd, SW_SHOWNORMAL);
 	UpdateWindow(hwnd);
 
-	while (GetMessage(&Msg, NULL, 0, 0) > 0)
+	//while (GetMessage(&Msg, NULL, 0, 0) > 0)
+	//{
+	//	TranslateMessage(&Msg);
+	//	DispatchMessage(&Msg);
+	//}
+
+	while (true)
 	{
-		TranslateMessage(&Msg);
-		DispatchMessage(&Msg);
+		// Process pending Windows messages
+		MSG Msg;
+
+		while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
+		{
+			if (Msg.message == WM_QUIT)
+				return 0;
+
+			TranslateMessage(&Msg);
+			DispatchMessage(&Msg);
+		}
+
+		// Measure frame time
+		std::chrono::steady_clock::time_point currentTime = std::chrono::steady_clock::now();
+
+		float elapsedTime =
+			std::chrono::duration<float>(
+				currentTime - previousTime
+			).count();
+
+		previousTime = currentTime;
+
+		// Update your application
+		OnUserUpdate(elapsedTime);
+
+		InvalidateRect(hwnd, NULL, FALSE);
+		UpdateWindow(hwnd);
+
+		// Optional: limit CPU usage / target ~60 updates per second
+		//std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
+
 
 	return 0;
 }
