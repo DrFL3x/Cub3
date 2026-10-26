@@ -8,8 +8,8 @@
 #include <vector>
 #include <thread>
 
-int WINDOW_HEIGHT = 700;
-int WINDOW_WIDTH  = 700;
+int WINDOW_HEIGHT = 800;
+int WINDOW_WIDTH  = 800;
 
 float rotTheta= 0.0f;
 
@@ -35,6 +35,20 @@ typedef struct {
 	float z;
 	float h;
 }vertex;
+
+struct vector3D
+{
+	// size & direction
+	float x;
+	float y;
+	float z;
+
+	float CalculateSize()
+	{
+		return std:: sqrtf(x*x + y*y + z*z);
+	}
+
+};
 
 typedef struct
 {
@@ -129,7 +143,7 @@ void DrawCircle(vertex sCoord, int radius, uint32_t color)
 	}
 }
 
-void DrawTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
+void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color)
 {
 
 	vertex vertice_bottom;
@@ -137,9 +151,9 @@ void DrawTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
 	vertex vertice_top;
 	
 	// sort vertices by y
-	vertice_bottom = point1;
-	vertice_middle = point2;
-	vertice_top = point3;
+	vertice_bottom = vertex1;
+	vertice_middle = vertex2;
+	vertice_top = vertex3;
 
 	if (vertice_bottom.y < vertice_middle.y)
 	{
@@ -229,6 +243,11 @@ void DrawTriangle(vertex point1, vertex point2, vertex point3, uint32_t color)
 			uint32_t shaded_r = (uint32_t)(r * intensity);
 			uint32_t shaded_g = (uint32_t)(g * intensity);
 			uint32_t shaded_b = (uint32_t)(b * intensity);
+
+			if (x < 0 || x >= WINDOW_WIDTH ||y < 0 || y >= WINDOW_HEIGHT)
+			{
+				continue;
+			}
 
 			int i =(int)y * WINDOW_WIDTH + x;
 			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
@@ -408,24 +427,24 @@ void OnUserUpdate( float elapsedTime)
 		// WEST
 		{{
 			{0.0f, 0.0f, 0.0f, 1.0f},
-			{0.0f, 1.0f, 0.0f, 1.0f},
-			{0.0f, 1.0f, 1.0f, 1.0f}
+			{0.0f, 1.0f, 1.0f, 1.0f},
+			{0.0f, 1.0f, 0.0f, 1.0f}
 		}},
 		{{
 			{0.0f, 0.0f, 0.0f, 1.0f},
-			{0.0f, 1.0f, 1.0f, 1.0f},
-			{0.0f, 0.0f, 1.0f, 1.0f}
+			{0.0f, 0.0f, 1.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f}
 		}},
 		// NORTH
 		{{
 			{0.0f, 0.0f, 1.0f, 1.0f},
-			{0.0f, 1.0f, 1.0f, 1.0f},
-			{1.0f, 1.0f, 1.0f, 1.0f}
+			{1.0f, 1.0f, 1.0f, 1.0f},
+			{0.0f, 1.0f, 1.0f, 1.0f}
 		}},
 		{{
 			{0.0f, 0.0f, 1.0f, 1.0f},
-			{1.0f, 1.0f, 1.0f, 1.0f},
-			{1.0f, 0.0f, 1.0f, 1.0f}
+			{1.0f, 0.0f, 1.0f, 1.0f},
+			{1.0f, 1.0f, 1.0f, 1.0f}
 		}},
 		// TOP
 		{{
@@ -441,13 +460,13 @@ void OnUserUpdate( float elapsedTime)
 		// BOTTOM
 		{{
 			{0.0f, 0.0f, 0.0f, 1.0f},
-			{0.0f, 0.0f, 1.0f, 1.0f},
-			{1.0f, 0.0f, 1.0f, 1.0f}
+			{1.0f, 0.0f, 1.0f, 1.0f},
+			{0.0f, 0.0f, 1.0f, 1.0f}
 		}},
 		{{
 			{0.0f, 0.0f, 0.0f, 1.0f},
-			{1.0f, 0.0f, 1.0f, 1.0f},
-			{1.0f, 0.0f, 0.0f, 1.0f}
+			{1.0f, 0.0f, 0.0f, 1.0f},
+			{1.0f, 0.0f, 1.0f, 1.0f}
 		}}
 		 
 	}};
@@ -458,9 +477,14 @@ void OnUserUpdate( float elapsedTime)
 
 	triangle projTriangle = {};
 
+	//DrawTriangle(ver1, ver2, ver3, color );
+	
 	Matrix4x4 m;
 	Matrix4x4 matRotX;
 	Matrix4x4 matRotZ;
+
+	vector3D camera = { 0,0,0 };
+
 
 	rotTheta += 0.3f * elapsedTime;
 
@@ -502,26 +526,25 @@ void OnUserUpdate( float elapsedTime)
 
 	uint32_t colors[12] =
 	{
-		0x00FF0000, // 1. Red
-		0x0000FF00, // 2. Green
-		0x000000FF, // 3. Blue
-		0x00FFFF00, // 4. Yellow
-		0x00800080, // 5. Purple
-		0x0000FFFF, // 6. Cyan
-		0x00FF8000, // 7. Orange
-		0x00FFFFFF, // 8. White
-		0x00FF1493, // 9. Deep pink
-		0x00808080, // 10. Gray
-		0x0080FF00, // 11. Lime
-		0x00000000  // 12. Black
+		0x00FF0000, // Red
+		0x0000FF00, // Green
+		0x000000FF, // Blue
+		0x00FFFF00, // Yellow
+		0x00800080, // Purple
+		0x0000FFFF, // Cyan
+		0x00FF8000, // Orange
+		0x00FFFFFF, // White
+		0x00FF1493, // Deep pink
+		0x00808080, //  Gray
+		0x0080FF00, //  Lime
+		0x00000000  //  Black
 	};
 
 	int colorIndex = 0;
 	for (auto t : cube.triangles)
 	{
-
 		triangle tOffset, tRotatedZ, tRotatedZX;
-		
+
 		//rotate Z
 		VectorMatrixMul(t.v[0], tRotatedZ.v[0], matRotZ.matrix);
 		VectorMatrixMul(t.v[1], tRotatedZ.v[1], matRotZ.matrix);
@@ -531,17 +554,48 @@ void OnUserUpdate( float elapsedTime)
 		VectorMatrixMul(tRotatedZ.v[1], tRotatedZX.v[1], matRotX.matrix);
 		VectorMatrixMul(tRotatedZ.v[2], tRotatedZX.v[2], matRotX.matrix);
 
-		
+		// make some offset from the camera
 		tOffset = tRotatedZX;
-		tOffset.v[0].z = t.v[0].z + 3.0f;
-		tOffset.v[1].z = t.v[1].z + 3.0f;
-		tOffset.v[2].z = t.v[2].z + 3.0f;
+		tOffset.v[0].z += 3.0f;
+		tOffset.v[1].z += 3.0f;
+		tOffset.v[2].z += 3.0f;
 
+		vector3D vectorA;
+		vector3D vectorB;
+		vector3D normal;
+
+		vectorA.x = tOffset.v[1].x - tOffset.v[0].x;
+		vectorA.y = tOffset.v[1].y - tOffset.v[0].y;
+		vectorA.z = tOffset.v[1].z - tOffset.v[0].z;
+		
+		vectorB.x = tOffset.v[2].x - tOffset.v[0].x;
+		vectorB.y = tOffset.v[2].y - tOffset.v[0].y;
+		vectorB.z = tOffset.v[2].z - tOffset.v[0].z;
+		 
+		normal.x = vectorA.y * vectorB.z - vectorA.z * vectorB.y;
+		normal.y = vectorA.z * vectorB.x - vectorA.x * vectorB.z;
+		normal.z = vectorA.x * vectorB.y - vectorA.y * vectorB.x;
+		
+		float normalSize = normal.CalculateSize();
+
+		normal.x /= normalSize;
+		normal.y /= normalSize;
+		normal.z /= normalSize;
+
+		float cameraDotNormal = normal.x * (tOffset.v[1].x - camera.x)
+			+ normal.y * (tOffset.v[1].y - camera.y)
+			+ normal.z * (tOffset.v[1].z - camera.z);
+
+		if (cameraDotNormal >= 0.0f)
+		{
+			continue;
+		}
+		// 3D -> 2D
 		VectorMatrixMul(tOffset.v[0], projTriangle.v[0], m.matrix);
 		VectorMatrixMul(tOffset.v[1], projTriangle.v[1], m.matrix);
 		VectorMatrixMul(tOffset.v[2], projTriangle.v[2], m.matrix);
-		
-		// scale properly
+	
+		// scale properly 
 		float scaleZ = 0.4f;
 		projTriangle.v[0].x+= 1.0f;
 		projTriangle.v[0].y+= 1.0f;
@@ -552,18 +606,18 @@ void OnUserUpdate( float elapsedTime)
 
 		projTriangle.v[0].x*= scaleZ * (float)WINDOW_WIDTH;
 		projTriangle.v[0].y*= scaleZ * (float)WINDOW_HEIGHT;
-		
+	
 		projTriangle.v[1].x*= scaleZ * (float)WINDOW_WIDTH;
 		projTriangle.v[1].y*= scaleZ * (float)WINDOW_HEIGHT;
-		
+	
 		projTriangle.v[2].x*= scaleZ * (float)WINDOW_WIDTH;
 		projTriangle.v[2].y*= scaleZ * (float)WINDOW_HEIGHT;
-
-		
-		DrawLineTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], 0x000000FF);
+	
+		//DrawLineTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], colors[2] * cameraDotNormal);
+		DrawTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], colors[2]);
 		colorIndex++;
-	}
 
+	}
 }
 
 
@@ -643,8 +697,9 @@ int main()
 		while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
 		{
 			if (Msg.message == WM_QUIT)
+			{
 				return 0;
-
+			}
 			TranslateMessage(&Msg);
 			DispatchMessage(&Msg);
 		}
@@ -660,7 +715,7 @@ int main()
 		previousTime = currentTime;
 
 		// Update your application
-		OnUserUpdate(elapsedTime);
+		OnUserUpdate(elapsedTime); 
 
 		InvalidateRect(hwnd, NULL, FALSE);
 		UpdateWindow(hwnd);
