@@ -7,6 +7,10 @@
 #include <cmath>
 #include <vector>
 #include <thread>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 int WINDOW_HEIGHT = 800;
 int WINDOW_WIDTH  = 800;
@@ -55,10 +59,141 @@ typedef struct
 	vertex v[3];
 }triangle;
 
-typedef struct
+//struct model
+//{
+//	std:: vector<triangle> triangles;
+//
+//	bool LoadObjFile(const std::string& filePath)
+//	{
+//		std::ifstream f(filePath);
+//		if (!f.is_open()) {
+//			std::cerr << "Failed to open OBJ file: " << filePath << std::endl;
+//			return false;
+//		}
+//
+//		std::vector<vertex> verts;
+//
+//		std:: string line;
+//		while (std::getline(f, line))
+//		{
+//			std:: stringstream s(line);
+//			char junk;
+//
+//			// Check for vertex lines ('v ')
+//			if (line.length() >= 2 && line[0] == 'v' && line[1] == ' ')
+//			{
+//				vertex v;
+//				s >> junk >> v.x >> v.y >> v.z;
+//				verts.push_back(v);
+//			}
+//
+//			// Check for face lines ('f ')
+//			if (line.length() >= 2 && line[0] == 'f' && line[1] == ' ')
+//			{
+//				int f_idx[3];
+//				s >> junk >> f_idx[0] >> f_idx[1] >> f_idx[2];
+//
+//				// Subtract 1 because OBJ files start counting at 1, but C++ starts at 0
+//				triangles.push_back({ verts[f_idx[0] - 1], verts[f_idx[1] - 1], verts[f_idx[2] - 1] });
+//			}
+//		}
+//
+//		f.close();
+//		return true;
+//
+//	}
+//
+//};
+
+struct model
 {
-	std:: vector<triangle> triangles;
-} model;
+	std::vector<triangle> triangles;
+
+	bool LoadObjFile(const std::string& filePath)
+	{
+		std::ifstream f(filePath);
+		if (!f.is_open()) {
+			std::cerr << "Failed to open OBJ file: " << filePath << std::endl;
+			return false;
+		}
+
+		std::vector<vertex> verts;
+		std::string line;
+
+		while (std::getline(f, line))
+		{
+			std::stringstream s(line);
+			char junk;
+
+			// Check for vertex lines ('v ')
+			if (line.length() >= 2 && line[0] == 'v' && line[1] == ' ')
+			{
+				vertex v;
+				s >> junk >> v.x >> v.y >> v.z;
+				v.h = 1.0f; // Important since your vertex struct has 4 floats (x, y, z, h)
+				verts.push_back(v);
+			}
+
+			// Check for face lines ('f ')
+			if (line.length() >= 2 && line[0] == 'f' && line[1] == ' ')
+			{
+				s >> junk; // Throw away 'f'
+				std::string token;
+				int f_idx[3];
+				bool validFace = true;
+
+				for (int i = 0; i < 3; ++i)
+				{
+					if (!(s >> token)) {
+						validFace = false;
+						break;
+					}
+
+					// If token has a slash (e.g. "308/1/1"), extract just the number before the slash
+					size_t slashPos = token.find('/');
+					std::string indexStr = (slashPos != std::string::npos) ? token.substr(0, slashPos) : token;
+
+					// Convert to 0-based index
+					int idx = std::stoi(indexStr) - 1;
+
+					// Safety check: Make sure this vertex actually exists before crashing
+					if (idx >= 0 && idx < verts.size()) {
+						f_idx[i] = idx;
+					}
+					else {
+						validFace = false;
+						break;
+					}
+				}
+
+				// Only add the triangle if all 3 indices were successfully read and validated
+				if (validFace) {
+					triangles.push_back({ verts[f_idx[0]], verts[f_idx[1]], verts[f_idx[2]] });
+				}
+			}
+		}
+
+		f.close();
+		return true;
+	}
+};
+
+enum ColorsWin32 : uint32_t
+{
+	Red		= 0x00FF0000, 
+	Green	= 0x0000FF00,
+	Blue	= 0x000000FF,
+	Yellow	= 0x00FFFF00,
+	Purple	= 0x00800080,
+	Cyan	= 0x0000FFFF,
+	Orange	= 0x00FF8000,
+	White	= 0x00FFFFFF,
+	Pink	= 0x00FF1493,
+	Gray	= 0x00808080,
+	Lime	= 0x0080FF00,
+	Black	= 0x00000000
+};
+
 
 const wchar_t windowClassName[] = L"CubeWindow";
 uint32_t* pixel_buffer;
@@ -110,6 +245,27 @@ void swap_points2d(vertex* point1, vertex*  point2)
 	*point2 = temp;
 }
 
+uint32_t ShadeColor(uint32_t color, float intensity)
+{
+	// extract color channels
+	//   00000001 10101001 10011010 10101010  (32 - bit color number)
+	// & 00000000 00000000 00000000 11111111  (0xFF mask)
+	uint32_t r = (color >> 16) & 0xFF;
+	uint32_t g = (color >> 8) & 0xFF;
+	uint32_t b = color & 0xFF;
+
+	if (intensity < 0.0f) intensity = 0.0f;
+	if (intensity > 1.0f) intensity = 1.0f;
+
+	//intensity = std::clamp(intensity, 0.0f, 1.0f);
+
+	uint32_t shaded_r = (uint32_t)(r * intensity);
+	uint32_t shaded_g = (uint32_t)(g * intensity);
+	uint32_t shaded_b = (uint32_t)(b * intensity);
+
+	return (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+}
+
 void DrawRectangle(vertex sCoord, int w, int h, uint32_t color)
 {
 	for (int py = sCoord.y; py < sCoord.y + h; py++)
@@ -145,7 +301,6 @@ void DrawCircle(vertex sCoord, int radius, uint32_t color)
 
 void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color)
 {
-
 	vertex vertice_bottom;
 	vertex vertice_middle;
 	vertex vertice_top;
@@ -168,9 +323,9 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 		swap_points2d(&vertice_middle, &vertice_top);
 	}
 
-	// calculate slope
-	// y= kx + b
-	// k= delta(x)/ delta(y)
+	//		calculate slope				//
+	// y= kx + b, k= delta(x)/ delta(y) //
+	//									//
 
 	int delta_X_top_bottom    = vertice_top.x - vertice_bottom.x;
 	int delta_X_top_middle    = vertice_top.x - vertice_middle.x;
@@ -180,13 +335,13 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 	int delta_Y_top_middle    = vertice_top.y - vertice_middle.y;
 	int delta_Y_middle_bottom = vertice_middle.y - vertice_bottom.y;
 	
-	float slope_top_bottom    = (float)delta_X_top_bottom / delta_Y_top_bottom;
-	float slope_top_middle    = (float)delta_X_top_middle / delta_Y_top_middle;
-	float slope_middle_bottom = (float)delta_X_middle_bottom / delta_Y_middle_bottom;
+	float slope_top_bottom = (delta_Y_top_bottom !=0) ? (float)delta_X_top_bottom / delta_Y_top_bottom : 0.0f;
+	float slope_top_middle = (delta_Y_top_middle !=0)? (float)delta_X_top_middle / delta_Y_top_middle: 0.0f;
+	float slope_middle_bottom = (delta_Y_middle_bottom != 0)? (float)delta_X_middle_bottom / delta_Y_middle_bottom : 0.0f;
 
-	//
-	// calculate shade slope -> dh/dy
-	//
+	//									//
+	// calculate shade slope -> dh/dy	//
+	//									//
 	float delta_H_top_bottom = vertice_top.h - vertice_bottom.h;
 	float delta_H_top_middle = vertice_top.h - vertice_middle.h;
 	float delta_H_middle_bottom = vertice_middle.h - vertice_bottom.h;
@@ -195,7 +350,9 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 	float h_slope_top_middle = (float)delta_H_top_middle / delta_Y_top_middle;
 	float h_slope_middle_bottom = (float)delta_H_middle_bottom / delta_Y_middle_bottom;
 
-	// Interpolate top-mid 
+	//						//
+	// Interpolate top-mid	//
+	//						//
 	int x0 = vertice_top.x;
 	int y0 = vertice_top.y;
 	float h0 = vertice_top.h;
@@ -208,13 +365,15 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 		float h_left  = h0 + (y - y0) * h_slope_top_middle;
 		float h_right = h0 + (y - y0) * h_slope_top_bottom;
 
-		int x_start= x_left;
-		int x_end= x_right;
+		float x_start= x_left;
+		float x_end= x_right;
 		if (x_start > x_end)
 		{
 			int temp = x_start;
 			x_start = x_end;
 			x_end = temp;
+
+			std::swap(h_left,h_right);
 		}
 
 		float dh_dx = 0.0f;
@@ -229,33 +388,22 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 		
 		for (float x = x_start; x < x_end; x++)
 		{
-			// extract color channels
-			//   00000001 10101001 10011010 10101010  (32 - bit color number)
-			// & 00000000 00000000 00000000 11111111  (0xFF mask)
-			uint32_t r = (color >> 16) & 0xFF;
-			uint32_t g = (color >> 8) & 0xFF;
-			uint32_t b = color & 0xFF;
-
 			float intensity = current_h;
-			if (intensity < 0.0f) intensity = 0.0f;
-			if (intensity > 1.0f) intensity = 1.0f;
-
-			uint32_t shaded_r = (uint32_t)(r * intensity);
-			uint32_t shaded_g = (uint32_t)(g * intensity);
-			uint32_t shaded_b = (uint32_t)(b * intensity);
-
 			if (x < 0 || x >= WINDOW_WIDTH ||y < 0 || y >= WINDOW_HEIGHT)
 			{
 				continue;
 			}
 
 			int i =(int)y * WINDOW_WIDTH + x;
-			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
+			uint32_t final_color = ShadeColor(color,intensity);
 			pixel_buffer[i] = final_color;
 			current_h+= dh_dx;
 		}		
 	}
-	// Interpolate mid-bottom
+
+	//							//
+	// Interpolate mid-bottom	//
+	//							//
 	int x0_m = vertice_middle.x;
 	int y0_m = vertice_middle.y;
 	float h0_m = vertice_middle.h;
@@ -288,21 +436,10 @@ void DrawTriangle(vertex vertex1, vertex vertex2, vertex vertex3, uint32_t color
 		float current_h = h_left;
 		for (float x = x_start; x < x_end; x++)
 		{
-			uint32_t r = (color >> 16) & 0xFF;
-			uint32_t g = (color >> 8) & 0xFF;
-			uint32_t b = color & 0xFF;
-
 			float intensity = current_h;
-			if (intensity < 0.0f) intensity = 0.0f;
-			if (intensity > 1.0f) intensity = 1.0f;
-
-			uint32_t shaded_r = (uint32_t)(r * intensity);
-			uint32_t shaded_g = (uint32_t)(g * intensity);
-			uint32_t shaded_b = (uint32_t)(b * intensity);
 
 			int i = (int)y * WINDOW_WIDTH + x;
-			uint32_t final_color = (shaded_r << 16) | (shaded_g << 8) | shaded_b;
-			pixel_buffer[i] = final_color;
+			pixel_buffer[i] = ShadeColor(color, intensity);
 			current_h += dh_dx;
 		}
 	}
@@ -376,6 +513,7 @@ void VectorMatrixMul(const vertex &inputV, vertex &outputV,float (&matrix) [4][4
 	outputV.x = inputV.x * matrix[0][0] + inputV.y * matrix[1][0] + inputV.z * matrix[2][0]+ matrix[3][0];
 	outputV.y = inputV.x * matrix[0][1] + inputV.y * matrix[1][1] + inputV.z * matrix[2][1]+ matrix[3][1];
 	outputV.z = inputV.x * matrix[0][2] + inputV.y * matrix[1][2] + inputV.z * matrix[2][2]+ matrix[3][2];
+	outputV.h = inputV.h;
 	float dev = inputV.x * matrix[0][3] + inputV.y * matrix[1][3] + inputV.z * matrix[2][3]+ matrix[3][3];
 
 	// devide with z coord to match distance squezzing of object
@@ -400,7 +538,7 @@ void OnUserUpdate( float elapsedTime)
 
 	// make a cube and project it ?
 	// cube -> triangles -> vertices
-	model cube =
+	model cube1 =
 	{{ // vector <triangle>
 		// SOUTH
 		{{
@@ -471,6 +609,9 @@ void OnUserUpdate( float elapsedTime)
 		 
 	}};
 
+	model cube;
+	cube.LoadObjFile("D:/source/Cub3/Monkey.obj");
+
 	vertex ver1 = { 160, 100,50, 1.0 };
 	vertex ver2 = { 110, 150,60, 0.5 };
 	vertex ver3 = { 180, 200,70, 0.0 };
@@ -524,23 +665,6 @@ void OnUserUpdate( float elapsedTime)
 
 	m.InitalizeMatrix(projectionValues);
 
-	uint32_t colors[12] =
-	{
-		0x00FF0000, // Red
-		0x0000FF00, // Green
-		0x000000FF, // Blue
-		0x00FFFF00, // Yellow
-		0x00800080, // Purple
-		0x0000FFFF, // Cyan
-		0x00FF8000, // Orange
-		0x00FFFFFF, // White
-		0x00FF1493, // Deep pink
-		0x00808080, //  Gray
-		0x0080FF00, //  Lime
-		0x00000000  //  Black
-	};
-
-	int colorIndex = 0;
 	for (auto t : cube.triangles)
 	{
 		triangle tOffset, tRotatedZ, tRotatedZX;
@@ -556,13 +680,14 @@ void OnUserUpdate( float elapsedTime)
 
 		// make some offset from the camera
 		tOffset = tRotatedZX;
-		tOffset.v[0].z += 3.0f;
-		tOffset.v[1].z += 3.0f;
-		tOffset.v[2].z += 3.0f;
+		tOffset.v[0].z += 5.0f;
+		tOffset.v[1].z += 5.0f;
+		tOffset.v[2].z += 5.0f;
 
 		vector3D vectorA;
 		vector3D vectorB;
 		vector3D normal;
+		vector3D light = {0,0,-1}; // set behind the eyes (0,0,0)
 
 		vectorA.x = tOffset.v[1].x - tOffset.v[0].x;
 		vectorA.y = tOffset.v[1].y - tOffset.v[0].y;
@@ -577,10 +702,15 @@ void OnUserUpdate( float elapsedTime)
 		normal.z = vectorA.x * vectorB.y - vectorA.y * vectorB.x;
 		
 		float normalSize = normal.CalculateSize();
+		float lightSize= light.CalculateSize();
 
 		normal.x /= normalSize;
 		normal.y /= normalSize;
 		normal.z /= normalSize;
+
+		light.x /= lightSize;
+		light.y /= lightSize;
+		light.z /= lightSize;
 
 		float cameraDotNormal = normal.x * (tOffset.v[1].x - camera.x)
 			+ normal.y * (tOffset.v[1].y - camera.y)
@@ -590,6 +720,11 @@ void OnUserUpdate( float elapsedTime)
 		{
 			continue;
 		}
+
+		float lightAngle= normal.x * light.x
+			+ normal.y * light.y
+			+ normal.z * light.z;
+
 		// 3D -> 2D
 		VectorMatrixMul(tOffset.v[0], projTriangle.v[0], m.matrix);
 		VectorMatrixMul(tOffset.v[1], projTriangle.v[1], m.matrix);
@@ -614,9 +749,10 @@ void OnUserUpdate( float elapsedTime)
 		projTriangle.v[2].y*= scaleZ * (float)WINDOW_HEIGHT;
 	
 		//DrawLineTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], colors[2] * cameraDotNormal);
-		DrawTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], colors[2]);
-		colorIndex++;
+		// light up each side depending on surface angle towards the camera
 
+		uint32_t color = ShadeColor(Red, lightAngle);
+		DrawTriangle(projTriangle.v[0], projTriangle.v[1], projTriangle.v[2], color);
 	}
 }
 
