@@ -43,108 +43,18 @@ int WINDOW_WIDTH  = 800;
 float rotTheta= 0.0f;
 float xM;
 
-struct Matrix4x4
+typedef struct {
+	float x;
+	float y;
+	float z;
+	float h;
+}vertex;
+
+typedef struct
 {
-	float matrix[4][4] = { 0 };
-	
-	// projects mesh 3d -> 2D
-	void Project(Matrix4x4 &outMat ,float zNear, float zFar, float fovDegrees, float aspectRatio)
-	{
-	
-		float q1 = zFar / (zFar - zNear);
-		float q2 = (zFar * zNear) / (zFar - zNear);
-	
-		float fFovRad = 1.0f / tanf(fovDegrees * (3.14159f / 180.0f) * 0.5f);
-		
-		outMat.matrix[0][0] = aspectRatio * fFovRad;
-		outMat.matrix[0][1] = 0.0f;
-		outMat.matrix[0][2] = 0.0f;
-		outMat.matrix[0][3] = 0.0f;
-
-		outMat.matrix[1][0] = 0.0f;
-		outMat.matrix[1][1] = fFovRad;
-		outMat.matrix[1][2] = 0.0f;
-		outMat.matrix[1][3] = 0.0f;
-
-		outMat.matrix[2][0] = 0.0f;
-		outMat.matrix[2][1] = 0.0f;
-		outMat.matrix[2][2] = q1;
-		outMat.matrix[2][3] = 1.0f; // Perspective w-divider flag
-
-		outMat.matrix[3][0] = 0.0f;
-		outMat.matrix[3][1] = 0.0f;
-		outMat.matrix[3][2] = -q2;
-		outMat.matrix[3][3] = 0.0f;
-
-	}
-
-	// Z-axis mesh rotation
-	void RotateZ(Matrix4x4 &outMat,float rotTheta)
-	{
-		outMat.matrix[0][0] = cosf(rotTheta);
-		outMat.matrix[0][1] = sinf(rotTheta);
-		outMat.matrix[1][0] = -sinf(rotTheta);
-		outMat.matrix[1][1] = cosf(rotTheta);
-		outMat.matrix[2][2] = 1;
-		outMat.matrix[3][3] = 1;
-	}
-	// X-axis mesh rotation
-	void RotateX(Matrix4x4 &outMat, float rotTheta)
-	{
-		outMat.matrix[0][0] = 1;
-		outMat.matrix[1][1] = cosf(rotTheta * 0.5f);
-		outMat.matrix[1][2] = sinf(rotTheta * 0.5f);
-		outMat.matrix[2][1] = -sinf(rotTheta * 0.5f);
-		outMat.matrix[2][2] = cosf(rotTheta * 0.5f);
-		outMat.matrix[3][3] = 1;
-	}
-
-	void RotateY(Matrix4x4& outMat, float rotTheta)
-	{
-		outMat.matrix[0][0] = cosf(rotTheta * 0.5f);
-		outMat.matrix[0][2] = -sinf(rotTheta * 0.5f);
-		outMat.matrix[1][1] = 1;
-		outMat.matrix[2][0] = sinf(rotTheta * 0.5f);
-		outMat.matrix[2][2] = cosf(rotTheta * 0.5f);
-		outMat.matrix[3][3] = 1;
-	}
-
-	void CreateIdentity(Matrix4x4 &out)
-	{
-		out.matrix[0][0] = 1.0f;
-		out.matrix[1][1] = 1.0f;
-		out.matrix[2][2] = 1.0f;
-		out.matrix[3][3] = 1.0f;
-	}
-
-	// Multiply 2 matrices
-	void Multiply(Matrix4x4 &m1, Matrix4x4 &m2, Matrix4x4 &out)
-	{
-		for (int i = 0; i < 4; i++) // Rows
-		{
-			for (int j = 0; j < 4; j++)
-			{
-				out.matrix[i][j] =
-				(m1.matrix[i][0] * m2.matrix[0][j]) +
-				(m1.matrix[i][1] * m2.matrix[1][j]) +
-				(m1.matrix[i][2] * m2.matrix[2][j]) +
-				(m1.matrix[i][3] * m2.matrix[3][j]);
-			}
-		}
-	}
-
-	void Translate(Matrix4x4 &m ,float x, float y, float z)
-	{
-		m.matrix[0][0] = 1.0f;
-		m.matrix[1][1] = 1.0f;
-		m.matrix[2][2] = 1.0f;
-		m.matrix[3][3] = 1.0f;
-		m.matrix[3][0] = x;
-		m.matrix[3][1] = y;
-		m.matrix[3][2] = z;
-	}
-
-};
+	vertex v[3];
+	float color;
+}triangle;
 
 struct vector3D
 {
@@ -171,20 +81,231 @@ struct vector3D
 		return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 	}
 
+	vector3D GetCrossProduct(const vector3D &v1,const vector3D &v2)
+	{
+		return
+		{
+			v1.y * v2.z - v1.z * v2.y, // x
+			v1.z * v2.x - v1.x * v2.z, // y
+			v1.x * v2.y - v1.y * v2.x, // z
+		};
+	}
+	
+	vector3D Substract(vector3D& v1, vector3D& v2)
+	{
+		return { v1.x - v2.x,v1.y - v2.y,v1.z - v2.z };
+	}
+	
+	vector3D Add(vector3D& v1, vector3D& v2)
+	{
+		return { v1.x + v2.x, v1.y + v2.y, v1.z + v2.z };
+	}
+	/// <summary>
+	/// Multiplies each vector component with 
+	/// arbitrary float value
+	/// </summary>
+	/// <param name="v1">input vector</param>
+	/// <param name="f">multiply float value </param>
+	vector3D fMultiply(vector3D& v1, float f)
+	{
+		return { v1.x * f, v1.y * f, v1.z * f };
+	}
+
 };
 
-typedef struct {
-	float x;
-	float y;
-	float z;
-	float h;
-}vertex;
-
-typedef struct
+struct Matrix4x4
 {
-	vertex v[3];
-	float color;
-}triangle;
+	// Note.
+	// We use row vector convention:
+	// [1  1]  [2  0] 
+	//         [1  1]
+	// Result: [3  1]
+	float m[4][4] = { 0 };
+	
+	// projects mesh 3d -> 2D
+	void Project(Matrix4x4 &outMat ,float zNear, float zFar, float fovDegrees, float aspectRatio)
+	{
+	
+		float q1 = zFar / (zFar - zNear);
+		float q2 = (zFar * zNear) / (zFar - zNear);
+	
+		float fFovRad = 1.0f / tanf(fovDegrees * (3.14159f / 180.0f) * 0.5f);
+		
+		outMat.m[0][0] = aspectRatio * fFovRad;
+		outMat.m[0][1] = 0.0f;
+		outMat.m[0][2] = 0.0f;
+		outMat.m[0][3] = 0.0f;
+
+		outMat.m[1][0] = 0.0f;
+		outMat.m[1][1] = fFovRad;
+		outMat.m[1][2] = 0.0f;
+		outMat.m[1][3] = 0.0f;
+
+		outMat.m[2][0] = 0.0f;
+		outMat.m[2][1] = 0.0f;
+		outMat.m[2][2] = q1;
+		outMat.m[2][3] = 1.0f; // Perspective w-divider flag
+
+		outMat.m[3][0] = 0.0f;
+		outMat.m[3][1] = 0.0f;
+		outMat.m[3][2] = -q2;
+		outMat.m[3][3] = 0.0f;
+
+	}
+
+	// Z-axis mesh rotation
+	void RotateZ(Matrix4x4 &outMat,float rotTheta)
+	{
+		outMat.m[0][0] = cosf(rotTheta);
+		outMat.m[0][1] = sinf(rotTheta);
+		outMat.m[1][0] = -sinf(rotTheta);
+		outMat.m[1][1] = cosf(rotTheta);
+		outMat.m[2][2] = 1;
+		outMat.m[3][3] = 1;
+	}
+	// X-axis mesh rotation
+	void RotateX(Matrix4x4 &outMat, float rotTheta)
+	{
+		outMat.m[0][0] = 1;
+		outMat.m[1][1] = cosf(rotTheta * 0.5f);
+		outMat.m[1][2] = sinf(rotTheta * 0.5f);
+		outMat.m[2][1] = -sinf(rotTheta * 0.5f);
+		outMat.m[2][2] = cosf(rotTheta * 0.5f);
+		outMat.m[3][3] = 1;
+	}
+
+	void RotateY(Matrix4x4& outMat, float rotTheta)
+	{
+		outMat.m[0][0] = cosf(rotTheta * 0.5f);
+		outMat.m[0][2] = -sinf(rotTheta * 0.5f);
+		outMat.m[1][1] = 1;
+		outMat.m[2][0] = sinf(rotTheta * 0.5f);
+		outMat.m[2][2] = cosf(rotTheta * 0.5f);
+		outMat.m[3][3] = 1;
+	}
+
+	void CreateIdentity(Matrix4x4 &out)
+	{
+		out.m[0][0] = 1.0f;
+		out.m[1][1] = 1.0f;
+		out.m[2][2] = 1.0f;
+		out.m[3][3] = 1.0f;
+	}
+
+	// Multiply 2 matrices
+	void Multiply(Matrix4x4 &m1, Matrix4x4 &m2, Matrix4x4 &out)
+	{
+		for (int i = 0; i < 4; i++) // Rows
+		{
+			for (int j = 0; j < 4; j++)
+			{
+				out.m[i][j] =
+				(m1.m[i][0] * m2.m[0][j]) +
+				(m1.m[i][1] * m2.m[1][j]) +
+				(m1.m[i][2] * m2.m[2][j]) +
+				(m1.m[i][3] * m2.m[3][j]);
+			}
+		}
+	}
+
+	void Translate(Matrix4x4 &m ,float x, float y, float z)
+	{
+		m.m[0][0] = 1.0f;
+		m.m[1][1] = 1.0f;
+		m.m[2][2] = 1.0f;
+		m.m[3][3] = 1.0f;
+		m.m[3][0] = x;
+		m.m[3][1] = y;
+		m.m[3][2] = z;
+	}
+
+	/// <summary>
+	/// Creates Camera view matrix based on camera's position in world
+	/// </summary>
+	/// <param name="pos">pos	Current camera position.</param>
+	/// <param name="tgt">tgt	Object we want to look at.</param>
+	/// <param name="Up">Up		World’s reference coord system yaw axis.</param>
+	/// <returns>Camera View transformation matrix.</returns>
+
+	Matrix4x4 CameraLookAt(vector3D &pos, vector3D &tgt, vector3D &up )
+	{
+		Matrix4x4 cMatrix;
+		vector3D cForward;
+		vector3D cRight;
+		vector3D cUp;
+		vector3D tmp;
+		
+		// 1. Where the camera is pointing 
+		cForward = cForward.Substract(pos, tgt);
+		cForward.Normalize(cForward);
+
+		// 2. Camera local Up axis
+		// Gram-Schmidt orthogonalization 
+		// World Up axis could be also used
+		tmp = tmp.fMultiply(cForward, tmp.GetDotProduct(cForward,up));
+		cUp = cUp.Substract(up,cUp);
+		cUp.Normalize(cUp);
+
+		// 3. Camera Right axis
+		cRight = cRight.GetCrossProduct(cForward,cUp);
+	
+		cMatrix.m[0][0] = cRight.x;
+		cMatrix.m[0][1] = cRight.y;
+		cMatrix.m[0][2] = cRight.z;
+		cMatrix.m[0][3] = 0.0f;
+
+		cMatrix.m[1][0] = cUp.x;
+		cMatrix.m[1][1] = cUp.y;
+		cMatrix.m[1][2] = cUp.z;
+		cMatrix.m[1][3] = 0.0f;
+
+		cMatrix.m[2][0] = cForward.x;
+		cMatrix.m[2][1] = cForward.y;
+		cMatrix.m[2][2] = cForward.z;
+		cMatrix.m[2][3] = 0.0f;
+
+		cMatrix.m[3][0] = pos.x;
+		cMatrix.m[3][1] = pos.y;
+		cMatrix.m[3][2] = pos.z;
+		cMatrix.m[3][3] = 1.0f;
+
+		return cMatrix;
+	}
+
+	Matrix4x4 TransposeCameraMatrix(Matrix4x4 &m)
+	{
+		Matrix4x4 matrix;
+
+		// Inverse 3x3
+		matrix.m[0][0] = m.m[0][0]; 
+		matrix.m[0][1] = m.m[1][0]; 
+		matrix.m[0][2] = m.m[2][0];
+		
+		matrix.m[1][0] = m.m[0][1];
+		matrix.m[1][1] = m.m[1][1];
+		matrix.m[1][2] = m.m[2][1];
+		
+		matrix.m[2][0] = m.m[0][2];
+		matrix.m[2][1] = m.m[1][2];
+		matrix.m[2][2] = m.m[2][2];
+		
+		// Set homogenuos column
+		matrix.m[0][3] = 0.0f;
+		matrix.m[1][3] = 0.0f;
+		matrix.m[2][3] = 0.0f;
+
+		// Invert translation
+		matrix.m[3][0] = -(m.m[3][0] * matrix.m[0][0] + m.m[3][1] * matrix.m[1][0] + m.m[3][2] * matrix.m[2][0]);
+		matrix.m[3][1] = -(m.m[3][0] * matrix.m[0][1] + m.m[3][1] * matrix.m[1][1] + m.m[3][2] * matrix.m[2][1]);
+		matrix.m[3][2] = -(m.m[3][0] * matrix.m[0][2] + m.m[3][1] * matrix.m[1][2] + m.m[3][2] * matrix.m[2][2]);
+
+		matrix.m[3][3] = 1.0f;
+		
+		return matrix;
+
+	}
+
+};
 
 struct model
 {
@@ -674,15 +795,19 @@ void ClearScreen()
 	);
 }
 
-void OnUserUpdate( float elapsedTime)
+void Render( float elapsedTime)
 {
 	Matrix4x4 mProj;
 	Matrix4x4 matRotX;
 	Matrix4x4 matRotY;
 	Matrix4x4 matRotZ;
+
 	Matrix4x4 matTrans;
-	Matrix4x4 matView;
+	Matrix4x4 matCamera;
+	Matrix4x4 WorldView;
+	Matrix4x4 cameraView;
 	triangle projTriangle = {};
+	triangle cameraTriangle = {};
 
 
 	// clear window screen
@@ -695,26 +820,36 @@ void OnUserUpdate( float elapsedTime)
 	model.LoadObjFile("D:/source/Cub3/Monkey.obj");
 	
 	vector3D camera = { 0,0,0 };
+	vector3D upAxis = { 0,1,0 };
+	vector3D pointDir = { 0,0,3 };
+
+	vector3D cTarget = cTarget.Add(camera, pointDir);
 
 	// live rotate the model
-	rotTheta += 0.3f * elapsedTime;
+	//rotTheta += 0.3f * elapsedTime;
 
 	matRotZ.RotateZ(matRotZ, rotTheta);
 	matRotX.RotateX(matRotX, rotTheta);
 	matRotY.RotateY(matRotY,rotTheta);
-	matView.CreateIdentity(matView);
+	WorldView.CreateIdentity(WorldView);
 
 	float zNear = 0.1f;
 	float zFar = 1000.0f;
 	float fovDegrees = 90.0f;
 	float aspectRatio = (float)WINDOW_WIDTH/ (float)WINDOW_HEIGHT;
 	
+	//projection matrix
 	mProj.Project(mProj,zNear, zFar, fovDegrees, aspectRatio);
-	matView.Multiply(matRotZ, matRotX, matView);
+	// world matrix
+	WorldView.Multiply(matRotZ, matRotX, WorldView);
 
 	// make some offset from the camera
 	matTrans.Translate(matTrans,0.0f,0.0f,3.0f);
-	matView.Multiply(matView, matTrans, matView);
+	WorldView.Multiply(WorldView, matTrans, WorldView);
+
+	// camera View
+	matCamera  = matCamera.CameraLookAt(camera, cTarget, upAxis);
+	cameraView = cameraView.TransposeCameraMatrix(matCamera);
 
 	std::vector <triangle> renderTriangles;
 
@@ -722,9 +857,9 @@ void OnUserUpdate( float elapsedTime)
 	{
 		triangle triangle;
 
-		VectorMatrixMul(t.v[0], triangle.v[0], matView.matrix);
-		VectorMatrixMul(t.v[1], triangle.v[1], matView.matrix);
-		VectorMatrixMul(t.v[2], triangle.v[2], matView.matrix);
+		VectorMatrixMul(t.v[0], triangle.v[0], WorldView.m);
+		VectorMatrixMul(t.v[1], triangle.v[1], WorldView.m);
+		VectorMatrixMul(t.v[2], triangle.v[2], WorldView.m);
 
 		vector3D vectorA;
 		vector3D vectorB;
@@ -739,13 +874,10 @@ void OnUserUpdate( float elapsedTime)
 		vectorB.y = triangle.v[2].y - triangle.v[0].y;
 		vectorB.z = triangle.v[2].z - triangle.v[0].z;
 		 
-		normal.x = vectorA.y * vectorB.z - vectorA.z * vectorB.y;
-		normal.y = vectorA.z * vectorB.x - vectorA.x * vectorB.z;
-		normal.z = vectorA.x * vectorB.y - vectorA.y * vectorB.x;
-		
+		normal = normal.GetCrossProduct(vectorA, vectorB);
+
 		normal.Normalize(normal);
 		light.Normalize(light);
-
 
 		// check if camera direction & triangle normal align
 		// hide triangle if not
@@ -764,11 +896,21 @@ void OnUserUpdate( float elapsedTime)
 
 		float lightAngle = normal.GetDotProduct(normal,light);
 		
-		// 3D -> 2D
-		VectorMatrixMul(triangle.v[0], projTriangle.v[0], mProj.matrix);
-		VectorMatrixMul(triangle.v[1], projTriangle.v[1], mProj.matrix);
-		VectorMatrixMul(triangle.v[2], projTriangle.v[2], mProj.matrix);
+		// What camera sees
+		VectorMatrixMul(triangle.v[0], cameraTriangle.v[0], cameraView.m);
+		VectorMatrixMul(triangle.v[1], cameraTriangle.v[1], cameraView.m);
+		VectorMatrixMul(triangle.v[2], cameraTriangle.v[2], cameraView.m);
+
+		// project 3D -> 2D
+		VectorMatrixMul(cameraTriangle.v[0], projTriangle.v[0], mProj.m);
+		VectorMatrixMul(cameraTriangle.v[1], projTriangle.v[1], mProj.m);
+		VectorMatrixMul(cameraTriangle.v[2], projTriangle.v[2], mProj.m);
 	
+		// original function
+		//VectorMatrixMul(triangle.v[0], projTriangle.v[0], mProj.m);
+		//VectorMatrixMul(triangle.v[1], projTriangle.v[1], mProj.m);
+		//VectorMatrixMul(triangle.v[2], projTriangle.v[2], mProj.m);
+
 		// scale properly 
 		float scaleZ = 0.4f;
 		projTriangle.v[0].x+= 1.0f;
@@ -788,7 +930,7 @@ void OnUserUpdate( float elapsedTime)
 		projTriangle.v[2].y*= scaleZ * (float)WINDOW_HEIGHT;
 	
 
-		// light up each side depending on surface angle towards the camera
+		// light up each side depending on surface angle towards the light
 		projTriangle.color = ShadeColor(Red, lightAngle);
 		
 		renderTriangles.push_back(projTriangle);
@@ -855,7 +997,7 @@ int main()
 		previousTime = currentTime;
 
 		// Update your application
-		OnUserUpdate(elapsedTime); 
+		Render(elapsedTime); 
 
 		InvalidateRect(hwnd, NULL, FALSE);
 		UpdateWindow(hwnd);
